@@ -1,14 +1,17 @@
 #include "puenteEstrecho.h"
 
 #define PORCENTAJE_AMBULANCIAS 0.1 //probabilidad de que el carro sea una ambulancia
-#define CANT_MUTEX 1000  //cantidad de mutex que se van a distribuir a lo largo del puente
+#define CANT_MUTEX 100  //cantidad de mutex que se van a distribuir a lo largo del puente
 #define NUM_CARROS 10 //numero de carros en la lista de threads por cada lado
 #define AMBULANCIA_PORC 0.1 //porcentaje de autos que seran ambulancias
-double longitud_puente = 1000; //esta es la longitud del puente que es un parametro de entrada en m, CANT_MUTEX depende de este parametro
+double longitud_puente = 100; //esta es la longitud del puente que es un parametro de entrada en m, CANT_MUTEX depende de este parametro
+
+#define TURNO_EW 1
+#define TURNO_WE 2
 
 pthread_mutex_t PUENTE[CANT_MUTEX];
 
-pthread_t CARROS_EW[NUM_CARROS];
+pthread_t CARROS_EW[NUM_CARROS]; //lista de 
 
 pthread_t CARROS_WE[NUM_CARROS];
 
@@ -20,9 +23,9 @@ int espera_semaforo_este = 5; //segundos de luz verde del semaforo de oeste
 
 float interocurrencia_EW = 4; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
 
-int lim_inf_velocidad_EW = 5; //limite inferior de la velocidad de los autos
+int lim_inf_velocidad_EW = 60; //limite inferior de la velocidad de los autos
 
-int lim_sup_velocidad_EW = 12; //limite superior de la velocidad de los autos
+int lim_sup_velocidad_EW = 70; //limite superior de la velocidad de los autos
 
 int velocidad_prom_EW = 7; //velocidad promedio de los autos
 
@@ -33,19 +36,15 @@ int espera_semaforo_oeste = 3; //segundos de luz verde del semaforo de este
 
 float interocurrencia_WE = 5; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
 
-int lim_inf_velocidad_WE = 6; //limite inferior de la velocidad de los autos
+int lim_inf_velocidad_WE = 80; //limite inferior de la velocidad de los autos
 
-int lim_sup_velocidad_WE = 15; //limite superior de la velocidad de los autos
+int lim_sup_velocidad_WE = 85; //limite superior de la velocidad de los autos
 
 int velocidad_prom_WE = 9; //velocidad promedio de los autos
 
 
 
 //----------------------------------------------------------------------------------
-
-
-#define TURNO_EW 1
-#define TURNO_WE 2
 
 int flag_turno = 0;
 pthread_mutex_t TURNO = PTHREAD_MUTEX_INITIALIZER;
@@ -61,14 +60,14 @@ pthread_mutex_t CARROS_PUENTE_WE = PTHREAD_MUTEX_INITIALIZER;
 
 void CARNAGE_MUTEX(int velocidad_carro) {
    double tiempo_en_pasar = ((double) 0.001 / (double)velocidad_carro)*3600000; //es 0.001
-   //printf("TIEMPO = %lfhr, con velocidad de %d km/hr\n",tiempo_en_pasar, velocidad_carro);
-   usleep(tiempo_en_pasar);
+
+   //printf("TIEMPO = %lfms, con velocidad de %d km/hr\n",tiempo_en_pasar, velocidad_carro);
+   usleep((int)tiempo_en_pasar*1000);
 }
 
 pthread_cond_t COND_HILOS_CARROS = PTHREAD_COND_INITIALIZER;
 
 void *CARRO_THREAD_EW(void *param){
-   printf("EW - LLEGO UN CARRO\n");
    pthread_mutex_t CARRO_TEMP = PTHREAD_MUTEX_INITIALIZER;
    struct CARRO* car = (struct CARRO*) param;
    pthread_mutex_lock(&CARRO_TEMP);
@@ -102,7 +101,7 @@ void *CARRO_THREAD_EW(void *param){
          if(cant_carros_puente_EW == 0){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
             pthread_mutex_lock(&TURNO);
             flag_turno = 0; 
-            pthread_cond_signal(&COND_HILOS_CARROS); //despierta a todos los carros o hilos dormidos o pausados
+            pthread_cond_broadcast(&COND_HILOS_CARROS); //despierta a todos los carros o hilos dormidos o pausados
             pthread_mutex_unlock(&TURNO);
          }
          break; //sale del while loop, porque ya paso el puente
@@ -154,7 +153,7 @@ void *CARRO_THREAD_WE(void *param){
          if(cant_carros_puente_WE == 0){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
             pthread_mutex_lock(&TURNO);
             flag_turno = 0; 
-            pthread_cond_signal(&COND_HILOS_CARROS); //despierta a todos los carros o hilos dormidos o pausados
+            pthread_cond_broadcast(&COND_HILOS_CARROS); //despierta a todos los carros o hilos dormidos o pausados
             pthread_mutex_unlock(&TURNO);
          }
          break; //sale del while loop, porque ya paso el puente
@@ -229,7 +228,7 @@ void *spawnear_carros_WE(void *arg){ //Esta funcion es recorida por un thread qu
 
 
 int main(int argc, char** argv){
-
+   //srand(time(0));
    pthread_t fEW,fWE,cEW,cWE,sEW,sWE;
 
    int i;

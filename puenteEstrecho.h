@@ -1,9 +1,11 @@
+//Proyecto1 SO (Ronald Esquivel, Ricardo Murillo y Dylan Gonzalez)
 /* Header */
 #include <pthread.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <math.h>
 #include <stdlib.h>
+#include <time.h>
 
 struct SEMAFORO {
 	int time; //tiempo de duracion de la luz verde del semaforo
