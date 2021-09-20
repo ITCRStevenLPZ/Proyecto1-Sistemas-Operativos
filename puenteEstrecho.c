@@ -3,7 +3,7 @@
 #define PORCENTAJE_AMBULANCIAS 0.1 //probabilidad de que el carro sea una ambulancia
 #define CANT_MUTEX 100  //cantidad de mutex que se van a distribuir a lo largo del puente
 #define NUM_CARROS 10 //numero de carros en la lista de threads por cada lado
-#define AMBULANCIA_PORC 0.1 //porcentaje de autos que seran ambulancias
+#define AMBULANCIA_PORC 0.4 //porcentaje de autos que seran ambulancias
 double longitud_puente = 100; //esta es la longitud del puente que es un parametro de entrada en m, CANT_MUTEX depende de este parametro
 
 #define TURNO_EW 1
@@ -111,6 +111,20 @@ int carros_oficial_WE;
 pthread_mutex_t CARRO_OFICIAL_EW = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_mutex_t CARRO_OFICIAL_WE = PTHREAD_MUTEX_INITIALIZER;
+
+int flag_ambulancia = 0;
+
+pthread_mutex_t AMBULANCIA = PTHREAD_MUTEX_INITIALIZER;
+
+int cant_carros_lado_EW = 0;
+
+pthread_mutex_t CARROS_LADO_EW = PTHREAD_MUTEX_INITIALIZER;
+
+int cant_carros_lado_WE = 0;
+
+pthread_mutex_t CARROS_LADO_WE = PTHREAD_MUTEX_INITIALIZER;
+
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 void *OFICIAL_THREAD_EW(void *param){
@@ -121,19 +135,25 @@ void *OFICIAL_THREAD_EW(void *param){
    //printf("WE - Esperando %ds a que llegue el carro\n", int_tiempo);
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_EW);
-   /*pthread_mutex_lock(&CARRO_DENTRO_EW);
-   carros_dentro_EW++;
-   pthread_mutex_unlock(&CARRO_DENTRO_EW);*/
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW++;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
    //printf("EW - LLEGO UN CARRO ID = %d\n", car->id);
    while(1){   
-      pthread_mutex_lock(&TURNO);
-      if(flag_turno == 0){ 
+      if(flag_turno == 0){
+         pthread_mutex_lock(&TURNO); 
          flag_turno = TURNO_EW; 
          printf("\n\n");
+         pthread_mutex_unlock(&TURNO);
       }
-      pthread_mutex_unlock(&TURNO);
 
-      if(flag_turno == TURNO_EW && cant_carros_puente_WE == 0 && carros_oficial_EW != 0){
+      if(car->es_ambulancia == 1 && cant_carros_lado_EW == 1){
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = TURNO_EW;
+         pthread_mutex_unlock(&AMBULANCIA);
+         printf("EW - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+      }
+      if(flag_turno == TURNO_EW && cant_carros_puente_WE == 0 && carros_oficial_EW != 0 && flag_ambulancia != TURNO_WE){
 
          pthread_mutex_lock(&CARRO_OFICIAL_EW);
          carros_oficial_EW--;
@@ -141,7 +161,11 @@ void *OFICIAL_THREAD_EW(void *param){
          pthread_mutex_unlock(&CARRO_OFICIAL_EW);
          pthread_mutex_unlock(&CARRO_TEMP_EW);
 
-         printf("EW - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("EW - ENTRA AMBULANCIA ID = %d\n", car->id);
+         }else{
+            printf("EW - ENTRA CARRO ID = %d\n", car->id);
+         }
          int i;
          for(i = CANT_MUTEX-1; i >= 0; i--){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -174,6 +198,36 @@ void *OFICIAL_THREAD_EW(void *param){
             pthread_cond_signal(&COND_HILOS_CARROS_WE); //despierta a los carros o hilos dormidos o pausados
          }
          break; //sale del while loop, porque ya paso el puente
+      }else if(car-> es_ambulancia == 1 && flag_ambulancia == TURNO_EW && cant_carros_puente_WE == 0){
+         pthread_mutex_unlock(&CARRO_TEMP_EW);
+         printf("EW - ENTRA SOLO LA AMBULANCIA ID = %d\n", car->id);
+         int i;
+         for(i = CANT_MUTEX-1; i >= 0; i--){
+            pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
+
+            pthread_mutex_lock(&CARROS_PUENTE_EW);
+            cant_carros_puente_EW++; //Suma a la cantidad de carros que usan el puente por cada mutex que se va ingresando
+            pthread_mutex_unlock(&CARROS_PUENTE_EW);
+
+            //printf("ENTRA CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+            MUTEX(car->velocidad);
+
+            //pthread_cond_signal(&COND_HILOS_CARROS_EW);
+
+            pthread_mutex_lock(&CARROS_PUENTE_EW);
+            cant_carros_puente_EW--; //Resta a la cantidad de carros que usan el puente por cada mutex que se va saliendo
+            pthread_mutex_unlock(&CARROS_PUENTE_EW);
+
+            pthread_mutex_unlock(&PUENTE[i]);//deja de usar ese mutex en especifico, o ese pedazo de puente
+            //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+         }
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = 0;
+         pthread_mutex_unlock(&AMBULANCIA);
+         pthread_cond_signal(&COND_HILOS_CARROS_WE);
+         
+         break; //sale del while loop, porque ya paso el puente
+
       }else{
          //printf("WE - ESPERA UN CARRO, NO ES EL TURNO\n");
          pthread_cond_wait(&COND_HILOS_CARROS_EW, &CARRO_TEMP_EW);//si no es el turno de el, el carro (el thread) se detiene
@@ -181,9 +235,9 @@ void *OFICIAL_THREAD_EW(void *param){
          //pthread_mutex_unlock(&CARRO_TEMP_EW);
       }
    }
-   /*pthread_mutex_lock(&CARRO_DENTRO_EW);
-   carros_dentro_EW--;
-   pthread_mutex_unlock(&CARRO_DENTRO_EW);*/
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW--;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
    printf("EW - SALE CARRO ID = %d\n", car->id);
    free(car);
 }
@@ -198,19 +252,24 @@ void *OFICIAL_THREAD_WE(void *param){
    //printf("WE - Esperando %ds a que llegue el carro\n", int_tiempo);
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_WE);
-   /*pthread_mutex_lock(&CARRO_DENTRO_WE);
-   carros_dentro_WE++;
-   pthread_mutex_unlock(&CARRO_DENTRO_WE);*/
-   ///printf("WE - LLEGO UN CARRO\n");
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE++;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
+   //printf("WE - LLEGO UN CARRO ID = %d\n", car->id);
    while(1){
-      pthread_mutex_lock(&TURNO);
       if(flag_turno == 0){
+         pthread_mutex_lock(&TURNO);
          flag_turno = TURNO_WE;
-         printf("\n\n"); 
+         printf("\n\n");
+         pthread_mutex_unlock(&TURNO); 
       }
-
-      pthread_mutex_unlock(&TURNO);
-      if(flag_turno == TURNO_WE && cant_carros_puente_EW == 0 && carros_oficial_WE != 0){
+      if(car->es_ambulancia == 1 && cant_carros_lado_WE == 1){
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = TURNO_WE;
+         pthread_mutex_unlock(&AMBULANCIA);
+         printf("WE - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+      }
+      if(flag_turno == TURNO_WE && cant_carros_puente_EW == 0 && carros_oficial_WE != 0 && flag_ambulancia != TURNO_EW){
 
          pthread_mutex_lock(&CARRO_OFICIAL_WE);
          carros_oficial_WE--;
@@ -218,7 +277,11 @@ void *OFICIAL_THREAD_WE(void *param){
          pthread_mutex_unlock(&CARRO_OFICIAL_WE);
 
          pthread_mutex_unlock(&CARRO_TEMP_WE);
-         printf("WE - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("WE - ENTRA AMBULANCIA ID = %d\n", car->id);
+         }else{
+            printf("WE - ENTRA CARRO ID = %d\n", car->id);
+         }
          int i;
          for(i = 0; i < CANT_MUTEX; i++){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -250,6 +313,35 @@ void *OFICIAL_THREAD_WE(void *param){
             pthread_cond_signal(&COND_HILOS_CARROS_EW); //despierta los carros o hilos dormidos o pausados
          }
          break; //sale del while loop, porque ya paso el puente
+      }else if(car-> es_ambulancia == 1 && flag_ambulancia == TURNO_WE && cant_carros_puente_EW == 0){
+         pthread_mutex_unlock(&CARRO_TEMP_WE);
+         printf("WE - ENTRA SOLO LA AMBULANCIA ID = %d\n", car->id);
+         int i;
+         for(i = 0; i < CANT_MUTEX; i++){
+            pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
+
+            pthread_mutex_lock(&CARROS_PUENTE_WE);
+            cant_carros_puente_WE++; //Suma a la cantidad de carros que usan el puente por cada mutex que se va ingresando
+            pthread_mutex_unlock(&CARROS_PUENTE_WE);
+
+            //printf("ENTRA CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+            MUTEX(car->velocidad);
+
+            //pthread_cond_signal(&COND_HILOS_CARROS_WE);
+
+            pthread_mutex_lock(&CARROS_PUENTE_WE);
+            cant_carros_puente_WE--; //Resta a la cantidad de carros que usan el puente por cada mutex que se va saliendo
+            pthread_mutex_unlock(&CARROS_PUENTE_WE);
+
+            pthread_mutex_unlock(&PUENTE[i]);//deja de usar ese mutex en especifico, o ese pedazo de puente
+            //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+         }
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = 0;
+         pthread_mutex_unlock(&AMBULANCIA);
+         pthread_cond_signal(&COND_HILOS_CARROS_WE);
+         
+         break; //sale del while loop, porque ya paso el puente
       }else{
          //printf("WE - ESPERA UN CARRO, NO ES EL TURNO\n");
          pthread_cond_wait(&COND_HILOS_CARROS_WE, &CARRO_TEMP_WE);//si no es el turno de el, el carro (el thread) se detiene
@@ -257,9 +349,9 @@ void *OFICIAL_THREAD_WE(void *param){
          //pthread_mutex_unlock(&CARRO_TEMP_WE);
       }
    }
-   /*pthread_mutex_lock(&CARRO_DENTRO_WE);
-   carros_dentro_WE--;
-   pthread_mutex_unlock(&CARRO_DENTRO_WE);*/
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE--;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
    printf("WE - SALE CARRO ID = %d\n", car->id);
    free(car);
    
@@ -321,9 +413,6 @@ void *semaforo_EW(void *tiempo_espera) {
 }
 
 //-----------------------------------------------------------------------------------------------------------------------
-
-
-
 void *SEMAFORO_THREAD_EW(void *param){
    struct CARRO* car = (struct CARRO*) param;
    double r = (double)rand() / (double)RAND_MAX ;
@@ -333,10 +422,23 @@ void *SEMAFORO_THREAD_EW(void *param){
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_EW);
    //printf("EW - LLEGO UN CARRO ID = %d\n", car->id);
-   while(1){   
-      if(estado_semaforo_EW == 0 && cant_carros_puente_WE == 0){
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW++;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
+   while(1){ 
+      if(car->es_ambulancia == 1 && cant_carros_lado_EW == 1 && estado_semaforo_EW != 0){
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = TURNO_EW;
+         pthread_mutex_unlock(&AMBULANCIA);
+         printf("EW - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+      }
+      if(estado_semaforo_EW == 0 && cant_carros_puente_WE == 0 && flag_ambulancia != TURNO_WE){
          pthread_mutex_unlock(&CARRO_TEMP_EW);
-         printf("EW - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("EW - ENTRA AMBULANCIA ID = %d\n", car->id);
+         }else{
+            printf("EW - ENTRA CARRO ID = %d\n", car->id);
+         }
          int i;
          for(i = CANT_MUTEX-1; i >= 0; i--){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -361,6 +463,35 @@ void *SEMAFORO_THREAD_EW(void *param){
             pthread_cond_signal(&COND_HILOS_CARROS_WE);
          }
          break; //sale del while loop, porque ya paso el puente
+      }else if(car-> es_ambulancia == 1 && cant_carros_puente_WE == 0 && flag_ambulancia == TURNO_EW){
+         pthread_mutex_unlock(&CARRO_TEMP_EW);
+         printf("EW - ENTRA SOLO LA AMBULANCIA ID = %d\n", car->id);
+         int i;
+         for(i = CANT_MUTEX-1; i >= 0; i--){
+            pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
+
+            pthread_mutex_lock(&CARROS_PUENTE_EW);
+            cant_carros_puente_EW++; //Suma a la cantidad de carros que usan el puente por cada mutex que se va ingresando
+            pthread_mutex_unlock(&CARROS_PUENTE_EW);
+
+            //printf("ENTRA CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+            MUTEX(car->velocidad);
+
+            //pthread_cond_signal(&COND_HILOS_CARROS_EW);
+
+            pthread_mutex_lock(&CARROS_PUENTE_EW);
+            cant_carros_puente_EW--; //Resta a la cantidad de carros que usan el puente por cada mutex que se va saliendo
+            pthread_mutex_unlock(&CARROS_PUENTE_EW);
+
+            pthread_mutex_unlock(&PUENTE[i]);//deja de usar ese mutex en especifico, o ese pedazo de puente
+            //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+         }
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = 0;
+         pthread_mutex_unlock(&AMBULANCIA);
+         pthread_cond_signal(&COND_HILOS_CARROS_WE);
+         
+         break; //sale del while loop, porque ya paso el puente
       }else{
          //printf("EW - ESPERA UN CARRO, LA LUZ NO ESTA EN VERDE O PASA UN CARRO\n");
          pthread_cond_wait(&COND_HILOS_CARROS_EW, &CARRO_TEMP_EW);//si no es el turno de el, el carro (el thread) se detiene
@@ -369,6 +500,9 @@ void *SEMAFORO_THREAD_EW(void *param){
       }
       
    }
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW--;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
    printf("EW - SALE CARRO ID = %d\n", car->id);
    free(car);
 }
@@ -382,10 +516,23 @@ void *SEMAFORO_THREAD_WE(void *param){
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_WE);
    ///printf("WE - LLEGO UN CARRO\n");
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE++;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
    while(1){
-      if(estado_semaforo_WE == 0 && cant_carros_puente_EW == 0){
+      if(car->es_ambulancia == 1 && cant_carros_lado_WE == 1 && estado_semaforo_WE != 0){
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = TURNO_WE;
+         pthread_mutex_unlock(&AMBULANCIA);
+         printf("WE - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+      }
+      if(estado_semaforo_WE == 0 && cant_carros_puente_EW == 0 && flag_ambulancia != TURNO_EW){
          pthread_mutex_unlock(&CARRO_TEMP_WE);
-         printf("WE - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("WE - ENTRA AMBULANCIA ID = %d\n", car->id);
+         }else{
+            printf("WE - ENTRA CARRO ID = %d\n", car->id);
+         }
          int i;
          for(i = 0; i < CANT_MUTEX; i++){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -410,6 +557,36 @@ void *SEMAFORO_THREAD_WE(void *param){
             pthread_cond_signal(&COND_HILOS_CARROS_EW);
          }
          break; //sale del while loop, porque ya paso el puente
+      }else if(car-> es_ambulancia == 1 && cant_carros_puente_EW == 0 && flag_ambulancia == TURNO_WE){
+         pthread_mutex_unlock(&CARRO_TEMP_WE);
+         printf("WE - ENTRA SOLO LA AMBULANCIA ID = %d\n", car->id);
+         int i;
+         for(i = 0; i < CANT_MUTEX; i++){
+            pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
+
+            pthread_mutex_lock(&CARROS_PUENTE_WE);
+            cant_carros_puente_WE++; //Suma a la cantidad de carros que usan el puente por cada mutex que se va ingresando
+            pthread_mutex_unlock(&CARROS_PUENTE_WE);
+
+            //printf("ENTRA CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+            MUTEX(car->velocidad);
+
+            //pthread_cond_signal(&COND_HILOS_CARROS_WE);
+
+            pthread_mutex_lock(&CARROS_PUENTE_WE);
+            cant_carros_puente_WE--; //Resta a la cantidad de carros que usan el puente por cada mutex que se va saliendo
+            pthread_mutex_unlock(&CARROS_PUENTE_WE);
+
+            pthread_mutex_unlock(&PUENTE[i]);//deja de usar ese mutex en especifico, o ese pedazo de puente
+            //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
+         }
+         pthread_mutex_lock(&AMBULANCIA);
+         flag_ambulancia = 0;
+         pthread_mutex_unlock(&AMBULANCIA);
+         pthread_cond_signal(&COND_HILOS_CARROS_EW);
+
+         break; //sale del while loop, porque ya paso el puente
+
       }else{
          //printf("WE - ESPERA UN CARRO, LA LUZ NO ESTA EN VERDE O PASA UN CARRO\n");
          pthread_cond_wait(&COND_HILOS_CARROS_WE, &CARRO_TEMP_WE);//si no es el turno de el, el carro (el thread) se detiene
@@ -417,7 +594,9 @@ void *SEMAFORO_THREAD_WE(void *param){
          //pthread_mutex_unlock(&CARRO_TEMP_WE);
       }
    }
-   
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE--;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
    printf("WE - SALE CARRO ID = %d\n", car->id);
    free(car);
 
@@ -434,16 +613,29 @@ void *CARNAGE_THREAD_EW(void *param){
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_EW);
    //printf("EW - LLEGO UN CARRO ID = %d\n", car->id);
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW++;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
    while(1){   
-      pthread_mutex_lock(&TURNO);
       if(flag_turno == 0){ 
+         pthread_mutex_lock(&TURNO);
          flag_turno = TURNO_EW; 
          printf("\n\n");
+         pthread_mutex_unlock(&TURNO);
       }
-      pthread_mutex_unlock(&TURNO);
+      if(car->es_ambulancia == 1 && cant_carros_lado_EW == 1){
+         pthread_mutex_lock(&TURNO);
+         flag_turno = TURNO_EW;
+         printf("EW - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+         pthread_mutex_unlock(&TURNO); 
+      }
       if(flag_turno == TURNO_EW && cant_carros_puente_WE == 0){
          pthread_mutex_unlock(&CARRO_TEMP_EW);
-         printf("EW - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("EW - ENTRA AMBULANCIA ID = %d, TURNO = %d\n", car->id, flag_turno);
+         }else{
+            printf("EW - ENTRA CARRO ID = %d, TURNO = %d\n", car->id, flag_turno);
+         }
          int i;
          for(i = CANT_MUTEX-1; i >= 0; i--){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -465,11 +657,14 @@ void *CARNAGE_THREAD_EW(void *param){
             //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
          }
 
-         if(cant_carros_puente_EW == 0){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
+         if(cant_carros_puente_EW == 0 && flag_turno == TURNO_EW){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
             pthread_mutex_lock(&TURNO);
             flag_turno = 0; 
             pthread_cond_signal(&COND_HILOS_CARROS_WE); //despierta a todos los carros o hilos dormidos o pausados
             pthread_mutex_unlock(&TURNO);
+         }else if(flag_turno == TURNO_WE){
+            printf("EW - VAN SALIENDO LOS CARROS PARA CEDER EL PASO A WE\n");
+            pthread_cond_signal(&COND_HILOS_CARROS_WE);
          }
          break; //sale del while loop, porque ya paso el puente
       }else{
@@ -479,6 +674,9 @@ void *CARNAGE_THREAD_EW(void *param){
          //pthread_mutex_unlock(&CARRO_TEMP_EW);
       }
    }
+   pthread_mutex_lock(&CARROS_LADO_EW);
+   cant_carros_lado_EW--;
+   pthread_mutex_unlock(&CARROS_LADO_EW);
    printf("EW - SALE CARRO ID = %d\n", car->id);
    free(car);
 }
@@ -493,16 +691,30 @@ void *CARNAGE_THREAD_WE(void *param){
    sleep(int_tiempo);  //el hilo creador espera el tiempo de ocurrencia retornado
    pthread_mutex_lock(&CARRO_TEMP_WE);
    ///printf("WE - LLEGO UN CARRO\n");
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE++;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
    while(1){
-      pthread_mutex_lock(&TURNO);
       if(flag_turno == 0){
+         pthread_mutex_lock(&TURNO);
          flag_turno = TURNO_WE;
-         printf("\n\n"); 
+         printf("\n\n");
+         pthread_mutex_unlock(&TURNO); 
       }
-      pthread_mutex_unlock(&TURNO);
+      if(car->es_ambulancia == 1 && cant_carros_lado_WE == 1){
+         pthread_mutex_lock(&TURNO);
+         flag_turno = TURNO_WE;
+         printf("WE - FAVOR CEDER CAMPO, HAY UNA AMBULANCIA = %d\n", car->id);
+         pthread_mutex_unlock(&TURNO); 
+      }
+      
       if(flag_turno == TURNO_WE && cant_carros_puente_EW == 0){
          pthread_mutex_unlock(&CARRO_TEMP_WE);
-         printf("WE - ENTRA CARRO ID = %d\n", car->id);
+         if(car->es_ambulancia == 1){
+            printf("WE - ENTRA AMBULANCIA ID = %d, TURNO = %d\n", car->id, flag_turno);
+         }else{
+            printf("WE - ENTRA CARRO ID = %d, TURNO = %d\n", car->id, flag_turno);
+         }
          int i;
          for(i = 0; i < CANT_MUTEX; i++){
             pthread_mutex_lock(&PUENTE[i]);//comienza a usar ese mutex en especifico, o ese pedazo de puente
@@ -524,11 +736,14 @@ void *CARNAGE_THREAD_WE(void *param){
             //printf("SALE CARRO ID = %d, Y MUTEX EN QUE PASA = %d\n", car->id, i);
          }
 
-         if(cant_carros_puente_WE == 0){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
+         if(cant_carros_puente_WE == 0 && flag_turno == TURNO_WE){//basicamente este if va a ser ingresado por el ultimo carro, ya que si la cantidad de carros en el puente es 0, quiere decir que ya no hay ninguno en el puente, y pone el turno PARA EL PRIMERO QUE LLEGUE
             pthread_mutex_lock(&TURNO);
             flag_turno = 0; 
             pthread_cond_signal(&COND_HILOS_CARROS_EW); //despierta a todos los carros o hilos dormidos o pausados
             pthread_mutex_unlock(&TURNO);
+         }else if(flag_turno == TURNO_EW){
+            printf("WE - VAN SALIENDO LOS CARROS PARA CEDER EL PASO A EW\n");
+            pthread_cond_signal(&COND_HILOS_CARROS_EW);
          }
          break; //sale del while loop, porque ya paso el puente
       }else{
@@ -538,7 +753,9 @@ void *CARNAGE_THREAD_WE(void *param){
          pthread_mutex_unlock(&CARRO_TEMP_WE);
       }
    }
-   
+   pthread_mutex_lock(&CARROS_LADO_WE);
+   cant_carros_lado_WE--;
+   pthread_mutex_unlock(&CARROS_LADO_WE);
    printf("WE - SALE CARRO ID = %d\n", car->id);
    free(car);
 
