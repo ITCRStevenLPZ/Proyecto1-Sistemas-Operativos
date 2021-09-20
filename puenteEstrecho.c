@@ -15,42 +15,44 @@ pthread_t CARROS_EW[NUM_CARROS]; //lista de
 
 pthread_t CARROS_WE[NUM_CARROS];
 
-int TIPO_ADMINISTRACION = 3;
+int TIPO_ADMINISTRACION;
 
 struct SEMAFORO datos_semaforo_WE;
 
 struct SEMAFORO datos_semaforo_EW;
 
+FILE *PARAM;
+
 //---------------------------------------------VARIABLES DE CADA LADO DEL PUENTE (TEMP)
 
 
-int espera_semaforo_este = 20; //segundos de luz verde del semaforo de oeste
+int espera_semaforo_este; //segundos de luz verde del semaforo de oeste
 
-float interocurrencia_EW = 12; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
+float interocurrencia_EW; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
 
-int lim_inf_velocidad_EW = 60; //limite inferior de la velocidad de los autos
+int lim_inf_velocidad_EW; //limite inferior de la velocidad de los autos
 
-int lim_sup_velocidad_EW = 70; //limite superior de la velocidad de los autos
+int lim_sup_velocidad_EW; //limite superior de la velocidad de los autos
 
-int velocidad_prom_EW = 7; //velocidad promedio de los autos
+int velocidad_prom_EW; //velocidad promedio de los autos
 
-int cant_carros_oficial_EW = 6;
+int cant_carros_oficial_EW;
 
 
 //----------------------------------------------------------------------------------
 
 
-int espera_semaforo_oeste = 15; //segundos de luz verde del semaforo de este
+int espera_semaforo_oeste; //segundos de luz verde del semaforo de este
 
-float interocurrencia_WE = 10; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
+float interocurrencia_WE; //media de la distribucion exponencial del tiempo entre llegadas de nuevos automoviles
 
-int lim_inf_velocidad_WE = 80; //limite inferior de la velocidad de los autos
+int lim_inf_velocidad_WE; //limite inferior de la velocidad de los autos
 
-int lim_sup_velocidad_WE = 85; //limite superior de la velocidad de los autos
+int lim_sup_velocidad_WE; //limite superior de la velocidad de los autos
 
-int velocidad_prom_WE = 9; //velocidad promedio de los autos
+int velocidad_prom_WE; //velocidad promedio de los autos
 
-int cant_carros_oficial_WE = 6;
+int cant_carros_oficial_WE;
 
 //----------------------------------------------------------------------------------
 
@@ -822,38 +824,48 @@ void *spawnear_carros_WE(void *arg){ //Esta funcion es recorida por un thread qu
    }
 }
 
+void obtener_parametros(void){ //funcion encargada de leer los parametros del parametros.txt, que van a aser usados durante todo el programa
+   fscanf(PARAM, "%lf %d", &longitud_puente, &TIPO_ADMINISTRACION);
+   #undef CANT_MUTEX
+   #define CANT_MUTEX longitud_puente
+   fscanf(PARAM, "%d %d %d %f %d", &lim_sup_velocidad_EW,&lim_inf_velocidad_EW,&espera_semaforo_este,&interocurrencia_EW,&cant_carros_oficial_EW);
+   fscanf(PARAM, "%d %d %d %f %d", &lim_sup_velocidad_WE,&lim_inf_velocidad_WE,&espera_semaforo_oeste,&interocurrencia_WE,&cant_carros_oficial_WE);
+   velocidad_prom_EW = (lim_sup_velocidad_EW + lim_inf_velocidad_EW) / 2;
+   velocidad_prom_WE = (lim_sup_velocidad_WE + lim_inf_velocidad_WE) / 2;
+}  
 
 
 int main(int argc, char** argv){
-   //srand(time(0));
+   srand(time(0));
+
+   PARAM = fopen ("parametros.txt","r");
+   if ( PARAM == NULL )
+   {
+      printf("No se puede abrir archivo") ;
+   }else{
+      obtener_parametros();
+   }
+  
    pthread_t fEW,fWE,cEW,cWE,sEW,sWE;
 
-   int i;
-   for(i = 0; i > CANT_MUTEX; i++){
-      PUENTE[i] = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
-   }
+   fclose(PARAM);
    if(TIPO_ADMINISTRACION == 2){
       datos_semaforo_EW.time = espera_semaforo_este;
       datos_semaforo_WE.time = espera_semaforo_oeste;
-  
       pthread_create(&sEW,NULL,semaforo_EW, &datos_semaforo_EW);
       pthread_create(&sWE,NULL,semaforo_WE, &datos_semaforo_WE);
    }else if(TIPO_ADMINISTRACION == 3){
       carros_oficial_EW = cant_carros_oficial_EW;
       carros_oficial_WE = cant_carros_oficial_WE;
    }
+   pthread_create(&cEW,NULL,spawnear_carros_EW, NULL);
+   pthread_create(&cWE,NULL,spawnear_carros_WE, NULL);
 
-   pthread_create(&cEW,NULL,spawnear_carros_EW,NULL); //primero se llama a los hilos creadores de hilos de autos
-   pthread_create(&cWE,NULL,spawnear_carros_WE,NULL);
 
-   pthread_join(cEW,NULL);
-   pthread_join(cWE,NULL);
-
+   pthread_join(fEW,NULL);
+   pthread_join(fWE,NULL);
    pthread_join(sEW,NULL);
    pthread_join(sWE,NULL);
-
-
-
 
    return 1;
 }

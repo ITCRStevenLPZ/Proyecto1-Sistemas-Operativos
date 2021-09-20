@@ -1,13 +1,4 @@
-longitud puente
-tipo de administracion
---- Valores Este-Oeste ---
-rango sup de velocidades de automoviles
-rango inferior de velocidades de automoviles
-valores para k automoviles seguidos (solo transito)
-tiempo de duracion luz verde semaforo (solo semaforo)
---- Valores Oeste-Este ---
-rango sup de velocidades de automoviles
-rango inferior de velocidades de automoviles
-valores para k automoviles seguidos (solo transito)
-tiempo de duracion luz verde semaforo (solo semaforo)
+100 3
+65 60 5 10 10
+55 50 7 13 5
 
